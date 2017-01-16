@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"io/ioutil" 
 	"github.com/nsf/termbox-go"
+	"time"
 )
 
 /*
@@ -24,7 +25,7 @@ var sound_timer uint8
 var stack = make([]uint16, 0)
 var sp int8 // actually pretty pointless
 var draw_flag bool = false
-
+var key byte
 
 // Thanks ejholmes
 var font_set = []byte {
@@ -45,6 +46,7 @@ var font_set = []byte {
 	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
 	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
+
 
 var keyMap = map[rune]byte{
 	'1': 0x01, '2': 0x02, '3': 0x03, '4': 0x0C,
@@ -241,14 +243,16 @@ func emulatecycle() {
 			switch opcode & 0x00FF {
 				case 0x009E:
 					pc += 2
-					if registers[x] == getKey() {
+					if registers[x] == key {
 						pc+=2
 					}
+					key = 0
 				case 0x00A1:
 					pc += 2
-					if registers[x] != getKey() {
+					if registers[x] != key {
 						pc+=2
 					}
+					key = 0
 				default:
 					//fmt.Println("unknown opcode in 0xE000")
 			}
@@ -341,18 +345,35 @@ func main() {
 	data,err := ioutil.ReadFile("INVADERS")
 	termbox.SetInputMode(termbox.InputEsc)
 	cpu_init(data)
-	
+	tick := time.Tick(time.Second / time.Duration(60))
+	event_queue := make(chan termbox.Event)
+        go func() {
+                for {
+                        event_queue <- termbox.PollEvent()
+                }
+        }()
+		
 	for {
-		emulatecycle()
-		if draw_flag == true {
-			draw()
-			draw_flag = false
-		}
-		if delay_timer > 0 {
-			delay_timer--
-		}
-		if sound_timer > 0 {
-			sound_timer--
+		select {
+		case <- tick:
+			emulatecycle()
+			if draw_flag == true {
+				draw()
+				draw_flag = false
+			}
+			if delay_timer > 0 {
+				delay_timer--
+			}
+			if sound_timer > 0 {
+				sound_timer--
+			}
+			select {
+				case ev := <- event_queue:
+					if ev.Ch != 0 {
+						key = keyMap[ev.Ch]
+					}
+				default:
+			}
 		}
 	}
 }
